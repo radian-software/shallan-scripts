@@ -7,6 +7,7 @@ import hashlib
 import json
 import pathlib
 import random
+import shutil
 import subprocess
 import sys
 import uuid
@@ -163,12 +164,13 @@ def get_uuid():
 
 
 def utunes_song_to_fields(song, utunes_lib):
-    print(song["filename"], file=sys.stderr)
     artwork_ext = pathlib.Path(song.get("artwork")).suffix.lstrip(".")
     if artwork_ext == "jpeg":
         artwork_ext = "jpg"
     if artwork_ext == "tiff":
         artwork_ext = "tif"
+    artwork_file = utunes_lib / "artwork" / song.get("artwork")
+    song_file = utunes_lib / "music" / song.get("filename")
     return {
         "id": get_uuid(),
         "acquired_illegally": from_yesno(song.get("acquired_illegally")),
@@ -179,7 +181,7 @@ def utunes_song_to_fields(song, utunes_lib):
         "album_sort": song.get("album_sort") or song.get("album"),
         "artist": song.get("artist"),
         "artist_sort": song.get("artist_sort") or song.get("artist"),
-        "artwork_hash": hash_file(utunes_lib / "artwork" / song.get("artwork")),
+        "artwork_hash": hash_file(artwork_file),
         "artwork_ext": artwork_ext,
         "as_bundle": from_yesno(song.get("as_bundle")),
         "as_gift": from_yesno(song.get("as_gift")),
@@ -187,7 +189,7 @@ def utunes_song_to_fields(song, utunes_lib):
         "composer_sort": song.get("composer_sort") or song.get("composer"),
         "date_added": song.get("date"),
         "disc": int(song.get("disc")),
-        "song_hash": hash_file(utunes_lib / "music" / song.get("filename")),
+        "song_hash": hash_file(song_file),
         "purchase_group": song.get("group"),
         "min_price_cents": int(decimal.Decimal(song.get("min_price") or "0.00") * 100),
         "paid_cents": int(decimal.Decimal(song.get("paid") or "0.00") * 100),
@@ -199,7 +201,18 @@ def utunes_song_to_fields(song, utunes_lib):
         "tracklist": song.get("tracklist"),
         "year_released": int(song.get("year")),
         "utunes_id": song.get("id"),
+        "_artwork_file": artwork_file,
+        "_song_file": song_file,
     }
+
+
+def link_object(obj_hash, link_target, shallan_objects):
+    path = shallan_objects / obj_hash[:2] / obj_hash[2:]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        link_target.link_to(path)
+    except FileExistsError:
+        pass
 
 
 def main():
@@ -210,6 +223,7 @@ def main():
     shallan_lib = music_dir / "shallan-lib"
     utunes_json = utunes_lib / "utunes.json"
     shallan_db = shallan_lib / "library.sqlite3"
+    shallan_objects = shallan_lib / "objects"
     sql_script = shallan_scripts / "utunes_to_shallan.sql"
     stmts = []
     song_columns = [
@@ -253,7 +267,12 @@ def main():
     with open(utunes_json) as f:
         utunes_data = json.load(f)
     songs = list(utunes_data["songs"].values())
-    for song in songs:
+    try:
+        shutil.rmtree(shallan_objects)
+    except FileNotFoundError:
+        pass
+    for idx, song in enumerate(songs):
+        print(f"[{idx:5d}/{len(songs)}] {song['filename']}", file=sys.stderr)
         fields = utunes_song_to_fields(song, utunes_lib)
         col_names = [col.name for col in song_columns]
         vals = [fields[name] for name in col_names]
@@ -272,6 +291,8 @@ INSERT INTO songs ({', '.join(col_names)})
 VALUES ({', '.join(str_vals)});
 """.strip()
         )
+        link_object(fields["artwork_hash"], fields["_artwork_file"], shallan_objects)
+        link_object(fields["song_hash"], fields["_song_file"], shallan_objects)
     sql = "\n".join(map(str, stmts)) + "\n"
     with open(sql_script, "w") as f:
         f.write(sql)
