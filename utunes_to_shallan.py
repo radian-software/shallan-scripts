@@ -5,6 +5,7 @@ import abc
 import decimal
 import hashlib
 import json
+import os
 import pathlib
 import random
 import shutil
@@ -28,18 +29,17 @@ class Column(abc.ABC):
         return None
 
     def __str__(self):
-        stmt = f"{self.name} {self.get_type()}"
+        stmt = f"{self.name} {self.get_type()} CONSTRAINT {self.name}"
         if not self.nullable:
             stmt += " NOT NULL"
         if self.primary:
             stmt += " PRIMARY KEY"
-        cons = f"TYPEOF({self.name}) IN ('{self.get_type().lower()}', 'null')"
-        extra_cons = self.get_constraint()
-        if extra_cons:
-            cons = f"({cons}) AND ({extra_cons})"
-        stmt += f" CONSTRAINT {self.name} CHECK ({cons})"
+        stmt += f" CHECK (TYPEOF({self.name}) IN ('{self.get_type().lower()}', 'null'))"
+        cons = self.get_constraint()
+        if cons:
+            stmt += f" CHECK ({cons})"
         if self.references:
-            stmt += f", FOREIGN KEY({self.name}) REFERENCES {self.references}"
+            stmt += f" REFERENCES {self.references}"
         return stmt
 
 
@@ -217,7 +217,7 @@ def link_object(obj_hash, link_target, shallan_objects):
         pass
 
 
-def main():
+def main(*, fast):
     shallan_scripts = pathlib.Path(__file__).resolve().parent
     assert shallan_scripts.name == "shallan-scripts"
     music_dir = shallan_scripts.parent
@@ -266,9 +266,20 @@ def main():
         IdColumn("song_id", references="songs"),
     ]
     stmts.append(Table("plays", play_columns))
+    playlist_columns = [IdColumn("id", primary=True), TextColumn("name")]
+    stmts.append(Table("playlists", playlist_columns))
+    playlist_song_columns = [
+        IdColumn("id", primary=True),
+        IdColumn("song_id", references="songs"),
+        IdColumn("playlist_id", references="playlists"),
+        NumColumn("ordering"),
+    ]
+    stmts.append(Table("playlist_songs", playlist_song_columns))
     with open(utunes_json) as f:
         utunes_data = json.load(f)
     songs = list(utunes_data["songs"].values())
+    if fast:
+        songs = songs[:10]
     try:
         shutil.rmtree(shallan_objects)
     except FileNotFoundError:
@@ -310,4 +321,4 @@ VALUES ({', '.join(str_vals)});
 
 
 if __name__ == "__main__":
-    main()
+    main(fast=os.getenv("FAST") not in (None, "0", "no"))
