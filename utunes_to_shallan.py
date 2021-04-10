@@ -271,7 +271,7 @@ def main():
         shutil.rmtree(shallan_objects)
     except FileNotFoundError:
         pass
-    for idx, song in enumerate(songs):
+    for idx, song in enumerate(songs, start=1):
         print(f"[{idx:5d}/{len(songs)}] {song['filename']}", file=sys.stderr)
         fields = utunes_song_to_fields(song, utunes_lib)
         col_names = [col.name for col in song_columns]
