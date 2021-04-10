@@ -33,9 +33,11 @@ class Column(abc.ABC):
             stmt += " NOT NULL"
         if self.primary:
             stmt += " PRIMARY KEY"
-        cons = self.get_constraint()
-        if cons:
-            stmt += f" CONSTRAINT {self.name} CHECK ({cons})"
+        cons = f"TYPEOF({self.name}) IN ('{self.get_type().lower()}', 'null')"
+        extra_cons = self.get_constraint()
+        if extra_cons:
+            cons = f"({cons}) AND ({extra_cons})"
+        stmt += f" CONSTRAINT {self.name} CHECK ({cons})"
         if self.references:
             stmt += f", FOREIGN KEY({self.name}) REFERENCES {self.references}"
         return stmt
