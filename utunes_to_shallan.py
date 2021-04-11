@@ -328,7 +328,7 @@ def main(*, fast):
         utunes_data = json.load(f)
     songs = list(utunes_data["songs"].values())
     if fast:
-        songs = songs[:10]
+        songs = [song for song in songs if song["album"] == "evermore"]
     try:
         shutil.rmtree(shallan_objects)
     except FileNotFoundError:
