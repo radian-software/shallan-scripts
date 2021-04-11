@@ -132,13 +132,35 @@ class ImageExtColumn(Column):
         return f"{self.name} IN ('jpg', 'png', 'tif')"
 
 
-class Table:
-    def __init__(self, name, columns):
+class Constraint(abc.ABC):
+    def __init__(self, name):
         self.name = name
-        self.columns = columns
+
+    @abc.abstractmethod
+    def get_sql(self):
+        pass
 
     def __str__(self):
-        args = ",\n  ".join(map(str, self.columns))
+        return f"CONSTRAINT {self.name} {self.get_sql()}"
+
+
+class UniqueConstraint(Constraint):
+    def __init__(self, name, columns):
+        super().__init__(name)
+        self.columns = columns
+
+    def get_sql(self):
+        return f"UNIQUE ({', '.join(self.columns)})"
+
+
+class Table:
+    def __init__(self, name, columns, constraints=[]):
+        self.name = name
+        self.columns = columns
+        self.constraints = constraints
+
+    def __str__(self):
+        args = ",\n  ".join(map(str, self.columns + self.constraints))
         return f"""
 CREATE TABLE {self.name} (
   {args}
@@ -259,7 +281,8 @@ def main(*, fast):
         YearColumn("year_released"),
         TextColumn("utunes_id", nullable=True),
     ]
-    stmts.append(Table("songs", song_columns))
+    song_constraints = [UniqueConstraint("song_unique", ["album", "name"])]
+    stmts.append(Table("songs", song_columns, song_constraints))
     play_columns = [
         IdColumn("id", primary=True),
         TimestampColumn("timestamp_ms"),
