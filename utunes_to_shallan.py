@@ -15,10 +15,13 @@ import uuid
 
 
 class Column(abc.ABC):
-    def __init__(self, name, nullable=False, primary=False, references=None):
+    def __init__(
+        self, name, nullable=False, primary=False, unique=False, references=None
+    ):
         self.name = name
         self.nullable = nullable
         self.primary = primary
+        self.unique = unique
         self.references = references
 
     @abc.abstractmethod
@@ -28,16 +31,24 @@ class Column(abc.ABC):
     def get_constraint(self):
         return None
 
+    def get_default(self):
+        return None
+
     def __str__(self):
         stmt = f"{self.name} {self.get_type()} CONSTRAINT {self.name}"
         if not self.nullable:
             stmt += " NOT NULL"
         if self.primary:
             stmt += " PRIMARY KEY"
+        if self.unique:
+            stmt += " UNIQUE"
         stmt += f" CHECK (TYPEOF({self.name}) IN ('{self.get_type().lower()}', 'null'))"
         cons = self.get_constraint()
         if cons:
             stmt += f" CHECK ({cons})"
+        default = self.get_default()
+        if default:
+            stmt += f" DEFAULT ({default})"
         if self.references:
             stmt += f" REFERENCES {self.references}"
         return stmt
@@ -65,6 +76,11 @@ class IdColumn(Column):
 
     def get_constraint(self):
         return f"{self.name} GLOB '{'[0-9a-f]' * 32}'"
+
+    def get_default(self):
+        if self.primary:
+            return "lower(hex(randomblob(16)))"
+        return super().get_default()
 
 
 class HashColumn(Column):
@@ -249,7 +265,7 @@ def main(*, fast):
     shallan_db = shallan_lib / "library.sqlite3"
     shallan_objects = shallan_lib / "objects"
     sql_script = shallan_scripts / "utunes_to_shallan.sql"
-    stmts = []
+    stmts = ["PRAGMA foreign_keys = yes;"]
     song_columns = [
         IdColumn("id", primary=True),
         BoolColumn("acquired_illegally"),
@@ -289,15 +305,25 @@ def main(*, fast):
         IdColumn("song_id", references="songs"),
     ]
     stmts.append(Table("plays", play_columns))
-    playlist_columns = [IdColumn("id", primary=True), TextColumn("name")]
+    playlist_columns = [
+        IdColumn("id", primary=True),
+        TextColumn("name", unique=True),
+        NumColumn("song_index", nullable=True),
+    ]
     stmts.append(Table("playlists", playlist_columns))
     playlist_song_columns = [
         IdColumn("id", primary=True),
         IdColumn("song_id", references="songs"),
         IdColumn("playlist_id", references="playlists"),
-        NumColumn("ordering"),
+        NumColumn("song_index"),
     ]
     stmts.append(Table("playlist_songs", playlist_song_columns))
+    play_queue_columns = [
+        IdColumn("id", primary=True),
+        TextColumn("device", unique=True),
+        IdColumn("playlist_id", references="playlists"),
+    ]
+    stmts.append(Table("play_queues", play_queue_columns))
     with open(utunes_json) as f:
         utunes_data = json.load(f)
     songs = list(utunes_data["songs"].values())
