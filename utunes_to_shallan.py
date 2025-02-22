@@ -324,6 +324,12 @@ def main(*, fast):
         IdColumn("playlist_id", references="playlists"),
     ]
     stmts.append(Table("play_queues", play_queue_columns))
+    journal_columns = [
+        IdColumn("id", primary=True),
+        TextColumn("txn"),
+        TimestampColumn("timestamp_ms"),
+    ]
+    stmts.append(Table("journal", journal_columns))
     with open(utunes_json) as f:
         utunes_data = json.load(f)
     songs = list(utunes_data["songs"].values())
